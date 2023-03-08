@@ -1,5 +1,5 @@
-#ifndef _inc_font
-#define _inc_font
+#ifndef _FONT // _FONT_HH
+#define _FONT_H
 
 /*
  * Format
@@ -107,4 +107,4 @@ const uint8_t font_8x5[] =
 			0x02, 0x01, 0x02, 0x04, 0x02,
 };
 
-#endif
+#endif // _FONT_H
