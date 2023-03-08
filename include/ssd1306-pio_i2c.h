@@ -34,6 +34,7 @@ SOFTWARE.
 typedef struct {
     uint8_t width;  /**< width of display */
     uint8_t height; /**< height of display */
+    bool flipped;   /**< whether the display is flipped vertically */
     uint8_t pages;  /**< stores pages of display (calculated on initialization*/
     uint8_t address;   /**< i2c address of display*/
     PIO pio;           /**< PIO instance */

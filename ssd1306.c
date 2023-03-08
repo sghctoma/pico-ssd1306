@@ -189,9 +189,16 @@ inline void ssd1306_invert(ssd1306_t *p, uint8_t inv) {
     send_command(p, SET_NORM_INV | (inv & 1));
 }
 
+inline void ssd1306_flip(ssd1306_t *p, uint8_t flip) { p->flipped = (flip != 0); }
+
 inline void ssd1306_clear(ssd1306_t *p) { memset(p->buffer, 0, p->bufsize); }
 
 void ssd1306_draw_pixel(ssd1306_t *p, uint32_t x, uint32_t y) {
+    if (p->flipped) {
+        x = p->width - x - 1;
+        y = p->height - y - 1;    
+    }
+    
     if (x >= p->width || y >= p->height) {
         return;
     }
