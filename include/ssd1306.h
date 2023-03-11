@@ -38,16 +38,47 @@ SOFTWARE.
 
 #include <pico/stdlib.h>
 #if DISP_PROTO == DISP_PROTO_I2C
-#include "ssd1306-i2c.h"
+#include "hardware/i2c.h"
 #elif DISP_PROTO == DISP_PROTO_PIO_I2C
-#include "ssd1306-pio_i2c.h"
+#include "hardware/pio.h"
 #elif DISP_PROTO == DISP_PROTO_SPI
-#include "ssd1306-spi.h"
+#include "hardware/spi.h"
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct {
+#if DISP_PROTO == DISP_PROTO_I2C
+    uint8_t address;   /**< i2c address of display*/
+    i2c_inst_t *i2c_i; /**< i2c connection instance */
+#elif DISP_PROTO == DISP_PROTO_PIO_I2C
+    uint8_t address;   /**< i2c address of display*/
+    PIO pio;           /**< PIO instance */
+    uint sm;           /**< PIO state machine index */
+    int (*i2c_write)(PIO, uint, uint8_t, const uint8_t *, uint); /**< PIO I2C write function*/
+#elif DISP_PROTO == DISP_PROTO_SPI
+    spi_inst_t *spi_i; /**< spi connection instance */
+    uint8_t cs_pin;    /**< chip select pin */
+    uint8_t dc_pin;    /**< data/command pin */
+    uint8_t rst_pin;   /**< reset pin */
+#endif
+} ssd1306_proto_t;
+
+/**
+ * @brief holds the configuration
+ */
+typedef struct ssd1306_t {
+    uint8_t width;  /**< width of display */
+    uint8_t height; /**< height of display */
+    bool flipped;   /**< whether the display is flipped vertically */
+    uint8_t pages;  /**< stores pages of display (calculated on initialization*/
+    bool external_vcc; /**< whether display uses external vcc */
+    uint8_t *buffer;   /**< display buffer */
+    size_t bufsize;    /**< buffer size */
+    ssd1306_proto_t proto;  /**< protocol-specific config */
+} ssd1306_t;
 
 /**
  * @brief defines commands used in ssd1306
@@ -71,6 +102,21 @@ typedef enum {
     SET_VCOM_DESEL = 0xDB,
     SET_CHARGE_PUMP = 0x8D
 } ssd1306_command_t;
+
+/**
+ * @brief initialize display
+ *
+ * @param[in] p : pointer to instance of ssd1306_t
+ * @param[in] width : width of display
+ * @param[in] height : heigth of display
+ * @param[in] proto : protocol-specific settings
+ *
+ * @return bool.
+ * @retval true for Success
+ * @retval false if initialization failed
+ */
+bool ssd1306_init(ssd1306_t *p, uint16_t width, uint16_t height,
+                  ssd1306_proto_t proto);
 
 /**
  * @brief deinitialize display

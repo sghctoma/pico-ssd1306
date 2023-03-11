@@ -42,13 +42,13 @@ static inline void swap(int32_t *a, int32_t *b) {
 #if DISP_PROTO == DISP_PROTO_SPI
 static inline void cs_select(ssd1306_t *p) {
     asm volatile("nop \n nop \n nop");
-    gpio_put(p->cs_pin, 0);
+    gpio_put(p->proto.cs_pin, 0);
     asm volatile("nop \n nop \n nop");
 }
 
 static inline void cs_deselect(ssd1306_t *p) {
     asm volatile("nop \n nop \n nop");
-    gpio_put(p->cs_pin, 1);
+    gpio_put(p->proto.cs_pin, 1);
     asm volatile("nop \n nop \n nop");
 }
 #endif
@@ -56,14 +56,14 @@ static inline void cs_deselect(ssd1306_t *p) {
 inline static void send_command(ssd1306_t *p, uint8_t command) {
 #if DISP_PROTO == DISP_PROTO_I2C
     uint8_t d[2] = {0x00, command};
-    i2c_write_blocking(p->i2c_i, p->address, d, 2, false);
+    i2c_write_blocking(p->proto.i2c_i, p->proto.address, d, 2, false);
 #elif DISP_PROTO == DISP_PROTO_PIO_I2C
     uint8_t d[2] = {0x00, command};
-    pio_i2c_write_blocking(p->pio, p->sm, p->address, d, 2);
+    (*p->proto.i2c_write)(p->proto.pio, p->proto.sm, p->proto.address, d, 2);
 #elif DISP_PROTO == DISP_PROTO_SPI
-    gpio_put(p->dc_pin, 0);
+    gpio_put(p->proto.dc_pin, 0);
     cs_select(p);
-    spi_write_blocking(p->spi_i, &command, 1);
+    spi_write_blocking(p->proto.spi_i, &command, 1);
     cs_deselect(p);
 #endif
 }
@@ -71,9 +71,9 @@ inline static void send_command(ssd1306_t *p, uint8_t command) {
 inline static void send_commands(ssd1306_t *p, const uint8_t *commands,
                                  size_t len) {
 #if DISP_PROTO == DISP_PROTO_SPI
-    gpio_put(p->dc_pin, 0);
+    gpio_put(p->proto.dc_pin, 0);
     cs_select(p);
-    spi_write_blocking(p->spi_i, commands, len);
+    spi_write_blocking(p->proto.spi_i, commands, len);
     cs_deselect(p);
 #else
     for (size_t i = 0; i < len; ++i) {
@@ -82,11 +82,31 @@ inline static void send_commands(ssd1306_t *p, const uint8_t *commands,
 #endif
 }
 
-static bool ssd1306_init_common(ssd1306_t *p, uint16_t width, uint16_t height) {
+bool ssd1306_init(ssd1306_t *p, uint16_t width, uint16_t height,
+                         ssd1306_proto_t proto) {
+    p->proto = proto;
     p->width = width;
     p->height = height;
     p->pages = height / 8;
 
+#if DISP_PROTO == DISP_PROTO_SPI
+    gpio_init(proto.cs_pin);
+    gpio_set_dir(proto.cs_pin, GPIO_OUT);
+    // Chip select is active-low, so we'll initialise it to a driven-high state
+    gpio_put(proto.cs_pin, 1);
+
+    gpio_init(proto.dc_pin);
+    gpio_set_dir(proto.dc_pin, GPIO_OUT);
+
+    gpio_init(proto.rst_pin);
+    gpio_set_dir(proto.rst_pin, GPIO_OUT);
+
+    // reset the display by pulling rst low then high
+    gpio_put(proto.rst_pin, 0);
+    sleep_ms(10);
+    gpio_put(proto.rst_pin, 1);
+#endif
+    
     p->bufsize = (p->pages) * (p->width);
     if ((p->buffer = malloc(p->bufsize + 1)) == NULL) {
         p->bufsize = 0;
@@ -124,55 +144,6 @@ static bool ssd1306_init_common(ssd1306_t *p, uint16_t width, uint16_t height) {
 
     return true;
 }
-
-#if DISP_PROTO == DISP_PROTO_I2C
-bool ssd1306_init(ssd1306_t *p, uint16_t width, uint16_t height,
-                  uint8_t address, i2c_inst_t *i2c_instance) {
-    p->address = address;
-    p->i2c_i = i2c_instance;
-
-    return ssd1306_init_common(p, width, height);
-}
-#elif DISP_PROTO == DISP_PROTO_PIO_I2C
-bool ssd1306_init(ssd1306_t *p, uint16_t width, uint16_t height, PIO pio,
-                  uint8_t address, uint8_t sda, uint8_t scl) {
-    p->address = address;
-    p->pio = pio;
-    p->sda = sda;
-    p->scl = scl;
-    p->sm = 0;
-    uint offset = pio_add_program(pio, &i2c_program);
-    i2c_program_init(pio, p->sm, offset, sda, scl);
-
-    return ssd1306_init_common(p, width, height);
-}
-#elif DISP_PROTO == DISP_PROTO_SPI
-bool ssd1306_init(ssd1306_t *p, uint16_t width, uint16_t height,
-                  spi_inst_t *spi_instance, uint8_t cs, uint8_t dc,
-                  uint8_t rst) {
-    p->spi_i = spi_instance;
-    p->cs_pin = cs;
-    p->dc_pin = dc;
-
-    gpio_init(cs);
-    gpio_set_dir(cs, GPIO_OUT);
-    // Chip select is active-low, so we'll initialise it to a driven-high state
-    gpio_put(cs, 1);
-
-    gpio_init(dc);
-    gpio_set_dir(dc, GPIO_OUT);
-
-    gpio_init(rst);
-    gpio_set_dir(rst, GPIO_OUT);
-
-    // reset the display by pulling rst low then high
-    gpio_put(rst, 0);
-    sleep_ms(10);
-    gpio_put(rst, 1);
-
-    return ssd1306_init_common(p, width, height);
-}
-#endif
 
 inline void ssd1306_deinit(ssd1306_t *p) { free(p->buffer - 1); }
 
@@ -380,16 +351,16 @@ void ssd1306_show(ssd1306_t *p) {
     *(p->buffer - 1) = 0x40;
 
 #if DISP_PROTO == DISP_PROTO_I2C
-    i2c_write_blocking(p->i2c_i, p->address, p->buffer - 1, p->bufsize + 1,
+    i2c_write_blocking(p->proto.i2c_i, p->proto.address, p->buffer - 1, p->bufsize + 1,
                        false);
 #elif DISP_PROTO == DISP_PROTO_PIO_I2C
-    pio_i2c_write_blocking(p->pio, p->sm, p->address,
-                           p->buffer - 1, p->bufsize + 1);
+    (*p->proto.i2c_write)(p->proto.pio, p->proto.sm, p->proto.address,
+                          p->buffer - 1, p->bufsize + 1);
 #elif DISP_PROTO == DISP_PROTO_SPI
-    gpio_put(p->dc_pin,
+    gpio_put(p->proto.dc_pin,
              1); // bring data/command high since we're sending data now
     cs_select(p);
-    spi_write_blocking(p->spi_i, p->buffer, p->bufsize);
+    spi_write_blocking(p->proto.spi_i, p->buffer, p->bufsize);
     cs_deselect(p);
 #endif
 }
